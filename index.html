@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>프로토타입</title>
+</head>
+<body>
+    <style>
+        body {
+            background-color: gray;
+        }
+    </style>
+    <h1></h1>
+
+    <script>
+        <!--현재 추가해야 할것. 텍스트 입력창에서 엔터 버튼.-->
+        const mainDiv = document.createElement("div");
+        const diceDiv = document.createElement("div");
+        const healthDiv = document.createElement("div");
+        const statDiv = document.createElement("div");
+        const textDiv = document.createElement("div");
+        const textArea = document.createElement("textarea");
+        const bagDiv = document.createElement("div");
+
+        mainDiv.id = "mainDiv";
+        mainDiv.className = "box";
+        mainDiv.innerText = "테스트";
+        mainDiv.style.padding = "20px";
+        mainDiv.style.border = "2px solid black";
+        mainDiv.style.width = "1000px";
+        mainDiv.style.height = "500px";
+
+        mainDiv.style.position = "absolute";
+        mainDiv.style.top = "50px";
+        mainDiv.style.left = "50px";
+
+        diceDiv.id = "diceDiv";
+        diceDiv.className = "box";
+        diceDiv.innerText = "주사위";
+        diceDiv.style.padding = "20px";
+        diceDiv.style.border = "2px solid black";
+        diceDiv.style.width = "200px";
+        diceDiv.style.height = "200px";
+
+        diceDiv.style.position = "absolute";
+        diceDiv.style.top = "50px";
+        diceDiv.style.left = "1100px";
+
+        healthDiv.id = "healthDiv";
+        healthDiv.classname = "box";
+        healthDiv.innerText = "체력&마나";
+        healthDiv.style.padding = "20px";
+        healthDiv.style.border = "2px solid black";
+        healthDiv.style.width = "200px";
+        healthDiv.style.height = "50px";
+
+        healthDiv.style.position = "absolute";
+        healthDiv.style.top = "300px";
+        healthDiv.style.left = "1100px";
+
+        statDiv.id = "statDiv";
+        statDiv.classname = "box";
+        statDiv.innerText = "능력치";
+        statDiv.style.padding = "20px";
+        statDiv.style.border = "2px solid black";
+        statDiv.style.width = "200px";
+        statDiv.style.height = "150px";
+
+        statDiv.style.position = "absolute";
+        statDiv.style.top = "400px";
+        statDiv.style.left = "1100px";
+
+        textDiv.id = "textDiv";
+        textDiv.classname = "box";
+        textDiv.innerText = "텍스트입력";
+        textDiv.style.padding = "20px";
+        textDiv.style.border = "2px solid black";
+        textDiv.style.width = "1250px";
+        textDiv.style.height = "150px";
+
+        textDiv.style.position = "absolute";
+        textDiv.style.top = "600px";
+        textDiv.style.left = "50px";
+
+        textArea.style.backgroundColor = "lightgray";
+        textArea.style.color = "black";
+        textArea.style.border = "2px solid darkgray";
+        textArea.style.borderRadius = "5px";
+        textArea.style.width = "1283px";
+        textArea.style.height = "183px";
+        textArea.style.resize = "none";
+
+        textArea.style.position = "absolute";
+        textArea.style.top = "0px";
+        textArea.style.left = "0px";
+
+        bagDivid = "textDiv";
+        bagDiv.classname = "box";
+        bagDiv.innerText = "가방";
+        bagDiv.style.padding = "20px";
+        bagDiv.style.border = "2px solid black";
+        bagDiv.style.width = "200px";
+        bagDiv.style.height = "700px";
+
+        bagDiv.style.position = "absolute";
+        bagDiv.style.top = "50px";
+        bagDiv.style.left = "1350px";
+
+        document.body.appendChild(mainDiv);
+        document.body.appendChild(diceDiv);
+        document.body.appendChild(healthDiv);
+        document.body.appendChild(statDiv);
+        document.body.appendChild(textDiv);
+        textDiv.appendChild(textArea);
+        document.body.appendChild(bagDiv);
+    </script>
+</body>
+</html>
