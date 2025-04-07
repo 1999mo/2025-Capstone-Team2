@@ -21,7 +21,6 @@ class StereoARActivity : Activity() {
             configure(config)
         }
 
-        // GLSurfaceView 설정
         glSurfaceView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             renderer = StereoARRenderer(arSession!!)
