@@ -7,15 +7,23 @@ import com.google.ar.core.Session
 import com.google.ar.core.Config
 
 class StereoARActivity : Activity() {
+
     private lateinit var glSurfaceView: GLSurfaceView
+    private var arSession: Session? = null
     private lateinit var renderer: StereoARRenderer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        arSession = Session(this).apply {
+            val config = Config(this)
+            config.focusMode = Config.FocusMode.AUTO
+            configure(config)
+        }
+
         glSurfaceView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
-            renderer = StereoARRenderer()
+            renderer = StereoARRenderer(arSession!!)
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
@@ -26,17 +34,17 @@ class StereoARActivity : Activity() {
     override fun onResume() {
         super.onResume()
         glSurfaceView.onResume()
-        ARCoreBridge.session?.resume()
+        arSession?.resume()
     }
 
     override fun onPause() {
         super.onPause()
         glSurfaceView.onPause()
-        ARCoreBridge.session?.pause()
+        arSession?.pause()
     }
 
     override fun onDestroy() {
-        ARCoreBridge.session?.close()
+        arSession?.close()
         super.onDestroy()
     }
 }
