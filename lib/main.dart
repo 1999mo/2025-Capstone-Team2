@@ -28,39 +28,32 @@ class ARViewScreen extends StatefulWidget {
 
 class _ARViewScreenState extends State<ARViewScreen> {
   static const platform = MethodChannel('arcore_channel');
-  int? textureId;
 
-  @override
-  void initState() {
-    super.initState();
-    _getTexture();
+  Future<void> adjustFocus() async {
+    try {
+      final String result = await platform.invokeMethod('adjustStereoFocus');
+      print("테스트 성공: $result");
+    } on PlatformException catch (e) {
+      print("테스트 실패: ${e.message}");
+    }
   }
 
-  Future<void> _getTexture() async {
-    try {
-      final int id = await platform.invokeMethod('getARTexture');
-      setState(() {
-        textureId = id;
-      });
-    } on PlatformException catch (e) {
-      print("AR 텍스쳐 호출 문제: '${e.message}");
-    }
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if(textureId == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Scaffold(
-      body: Row(
-        children: [
-          Expanded(child: Texture(textureId: textureId!)),
-        ],
-      )
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: ElevatedButton(
+            onPressed: adjustFocus,
+            child: Text("테스트"),
+          ),
+        ),
+      ),
     );
   }
 }
