@@ -3,11 +3,12 @@ package com.example.capstone_2
 import android.os.Bundle
 import com.google.ar.core.Config
 import com.google.ar.core.Session
-import android.opengl.Matrix
+//import android.opengl.Matrix
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.util.Log
+import android.content.Intent
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "arcore_channel"
@@ -24,14 +25,18 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        Log.d("Main", "configureFlutter")
         super.configureFlutterEngine(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "adjustStereoFocus" -> {
                     arSession?.let { session ->
-                        adjustStereoRendering(session, 1080, 1920)
-                        setFocusMode(session)
+                        Log.d("Main", "channel call")
+                        val intent = Intent(this, StereoARActivity::class.java)
+                        startActivity(intent)
+                        //adjustStereoRendering(session, 1080, 1920)
+                        //setFocusMode(session)
                         result.success("Adjusted")
                     } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
                 }
