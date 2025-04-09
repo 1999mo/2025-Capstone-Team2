@@ -51,19 +51,17 @@ class StereoARRenderer(
         //cameraTextureId = createCameraTexture()
         surfaceTexture = SurfaceTexture(oesTextureId)
         surfaceTexture.setOnFrameAvailableListener {
-            // 프레임 새로 도착했을 때 콜백
         }
         session.setCameraTextureName(oesTextureId)
 
-        // 기본 projection 설정
         val projectionMatrix = FloatArray(16)
         Matrix.frustumM(projectionMatrix, 0, -1f, 1f, -1f, 1f, 1f, 100f)
 
-        // 왼쪽 눈 matrix
+        //Left
         System.arraycopy(projectionMatrix, 0, leftEyeMatrix, 0, 16)
         Matrix.translateM(leftEyeMatrix, 0, -0.03f, 0f, 0f)
 
-        // 오른쪽 눈 matrix
+        //Right
         System.arraycopy(projectionMatrix, 0, rightEyeMatrix, 0, 16)
         Matrix.translateM(rightEyeMatrix, 0, 0.03f, 0f, 0f)
 
@@ -82,9 +80,21 @@ class StereoARRenderer(
             precision mediump float;
             uniform samplerExternalOES u_Texture;
             varying vec2 v_TexCoord;
-            void main() {
-                gl_FragColor = texture2D(u_Texture, v_TexCoord);
+            
+            vec2 barrelDistortion(vec2 uv, float k) {
+                vec2 center = vec2(0.5, 0.5);
+                vec2 delta = uv - center;
+                float r2 = dot(delta, delta);
+                return center + delta * (1.0 + k * r2);
             }
+
+            void main() {
+                vec2 distortedUV = barrelDistortion(v_TexCoord, -0.3);
+                if (distortedUV.x < 0.0 || distortedUV.x > 1.0 || distortedUV.y < 0.0 || distortedUV.y > 1.0) {
+                discard;
+            }
+            gl_FragColor = texture2D(u_Texture, distortedUV);
+        }
         """
 
         shaderProgram = ShaderUtil.createProgram(vertexShaderCode, fragmentShaderCode)
@@ -107,18 +117,17 @@ class StereoARRenderer(
     override fun onDrawFrame(gl: GL10?) {
         Log.d("Render", "onDrawFrame")
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        val eyeWidth = (screenWidth * 0.46).toInt()
+        val eyeGap = (screenWidth * 0.04).toInt()
 
-        // ARCore 카메라 프레임 업데이트
         session.update()
         surfaceTexture.updateTexImage()
         val halfWidth = screenWidth / 2
 
-        // 왼쪽 눈 뷰포트
-        GLES20.glViewport(0, 0, halfWidth, screenHeight)
+        GLES20.glViewport(eyeGap, 0, eyeWidth, screenHeight)
         drawScene(leftEyeMatrix)
 
-        // 오른쪽 눈 뷰포트
-        GLES20.glViewport(halfWidth, 0, halfWidth, screenHeight)
+        GLES20.glViewport(screenWidth - eyeWidth - eyeGap, 0, eyeWidth, screenHeight)
         drawScene(rightEyeMatrix)
     }
 
