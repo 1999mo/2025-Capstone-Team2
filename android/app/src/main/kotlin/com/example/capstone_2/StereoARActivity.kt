@@ -20,6 +20,7 @@ class StereoARActivity : Activity() {
 
         arSession = Session(this).apply {
             val config = Config(this)
+            //config.depthMode = Config.DepthMode.AUTOMATIC
             config.focusMode = Config.FocusMode.AUTO
             configure(config)
         }

@@ -43,6 +43,15 @@ class _ARViewScreenState extends State<ARViewScreen> {
     }
   }
 
+  Future<void> connectToPC() async {
+    try {
+      final String result = await platform.invokeMethod('connectToPC');
+      print("서버 연결 성공: $result");
+    } on PlatformException catch (e) {
+      print("서버 연결 실패: $e");
+    }
+  }
+
   @override
   void dispose() {
     super.dispose();
@@ -53,9 +62,19 @@ class _ARViewScreenState extends State<ARViewScreen> {
     return MaterialApp(
       home: Scaffold(
         body: Center(
-          child: ElevatedButton(
-            onPressed: adjustFocus,
-            child: Text("테스트"),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: adjustFocus,
+                child: Text("테스트"),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: connectToPC,
+                child: Text("서버 연결"),
+              )
+            ],
           ),
         ),
       ),

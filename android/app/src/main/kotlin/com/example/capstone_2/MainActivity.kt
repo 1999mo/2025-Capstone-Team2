@@ -9,10 +9,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.util.Log
 import android.content.Intent
+import com.journeyapps.barcodescanner.ScanOptions
+import com.journeyapps.barcodescanner.ScanContract
+import androidx.activity.result.ActivityResultLauncher
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "arcore_channel"
     private var arSession: Session? = null
+    private var scanLauncher: ActivityResultLauncher<ScanOptions>? = null
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +44,10 @@ class MainActivity : FlutterActivity() {
                         //setFocusMode(session)
                         result.success("Adjusted")
                     } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
+                }
+                "connectToPC" -> {
+                    val response = ConnectPC.connect()
+                    result.success(response)
                 }
                 else -> result.notImplemented()
             }
