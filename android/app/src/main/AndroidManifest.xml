@@ -11,6 +11,9 @@
     <!-- AR 설정 -->
     <uses-permission android:name="android.hardware.camera.ar" />
 
+    <!-- 인터넷 권한 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="capstone_2"
         android:name="${applicationName}"
@@ -39,6 +42,8 @@
             </intent-filter>
         </activity>
         <activity android:name=".StereoARActivity" />
+        <activity android:name=".QRScanActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

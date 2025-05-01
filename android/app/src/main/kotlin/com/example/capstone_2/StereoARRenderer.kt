@@ -18,6 +18,10 @@ import android.view.WindowManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.view.Surface
+import com.example.capstone_2.OtherUtil.crossProduct
+import com.example.capstone_2.OtherUtil.normalize
+import com.google.ar.core.Plane
+import com.google.ar.core.exceptions.NotYetAvailableException
 
 class StereoARRenderer(
     private val session: Session,
@@ -58,6 +62,9 @@ class StereoARRenderer(
     lateinit var mediaPlayer: MediaPlayer
     lateinit var videoTexture: SurfaceTexture
     var videoTextureId: Int = 0
+    val depthTextureId = IntArray(1)
+    private var videoUri: Uri? = null
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         Log.d("Render", "onSurfaceCreated")
         GLES20.glClearColor(0f, 0f, 0f, 0f)
@@ -75,6 +82,11 @@ class StereoARRenderer(
 
         }
 
+        videoUri?.let { uri ->
+            setVideoUri(context, uri)
+        }
+
+        /*
         mediaPlayer = MediaPlayer()
         val videoUri = Uri.parse("android.resource://${context.packageName}/${R.raw.my_video}")
         mediaPlayer.setDataSource(context, videoUri)
@@ -82,6 +94,7 @@ class StereoARRenderer(
         mediaPlayer.isLooping = true
         mediaPlayer.prepare()
         mediaPlayer.start()
+        */
 
         val projectionMatrix = FloatArray(16)
         Matrix.frustumM(projectionMatrix, 0, -1f, 1f, -1f, 1f, 1f, 100f)
@@ -164,11 +177,19 @@ class StereoARRenderer(
         val planeFragmentShaderCode = """
             #extension GL_OES_EGL_image_external : require
             precision mediump float;
+            
             uniform samplerExternalOES u_Texture;
+            uniform sampler2D u_DepthTexture;
             varying vec2 v_TexCoord;
             
             void main() {
-                gl_FragColor = texture2D(u_Texture, v_TexCoord);
+                float depth = texture2D(u_DepthTexture, v_TexCoord).r;
+                
+                if (depth < 0.5) {
+                    //discard;
+                }
+                
+                gl_FragColor = texture2D(u_Texture, vec2(v_TexCoord.x, 1.0 - v_TexCoord.y));
             }
         """
 
@@ -195,11 +216,54 @@ class StereoARRenderer(
         val anchorMatrix = FloatArray(16)
 
         val frame = session.update()
+        val updatedPlanes = session.getAllTrackables(Plane::class.java)
         val camera = frame.camera
-        //al depthImage = frame.acquireDepthImage()
+        try {
+            val depthImage = frame.acquireDepthImage()
+            //val width = depthImage.width
+            //val height = depthImage.height
+
+            GLES20.glGenTextures(1, depthTextureId, 0)
+
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTextureId[0])
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+
+            val depthData = depthImage.planes[0].buffer
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D, 0, GLES20.GL_DEPTH_COMPONENT,
+                depthImage.width, depthImage.height, 0,
+                GLES20.GL_DEPTH_COMPONENT, GLES20.GL_FLOAT, depthData
+            )
+
+            depthImage.close()
+        } catch (e: NotYetAvailableException)  {
+
+        }
         surfaceTexture.updateTexImage()
         videoTexture.updateTexImage()
 
+
+        /*
+        Log.d("Render", "${camera.trackingState}, this the tracking state")
+
+        Log.d("Render", "${updatedPlanes}, these are the planes")
+        for (plane in updatedPlanes) {
+            Log.d("Render", "Trying Anchor creation")
+            if (plane.trackingState == TrackingState.TRACKING &&
+                plane.type == Plane.Type.VERTICAL &&
+                plane.isPoseInPolygon(frame.camera.pose)
+            ) {
+                if (anchor == null) {
+                    val hitPose = plane.centerPose
+                    anchor = session.createAnchor(hitPose)
+                    Log.d("AR", "✅ 벽(수직 평면)에 앵커 생성됨!")
+                }
+            }
+        }
+        */
 
         Log.d("Render", "Trying Anchor creation")
         Log.d("Render", "Tracking: ${camera.trackingState}, Anchor: $anchor")
@@ -208,19 +272,26 @@ class StereoARRenderer(
             val forward = floatArrayOf(0f, 0f, -2f)
             val up = floatArrayOf(0f, 1f, 0f)
             //val out = FloatArray(3)
-
             val rotatedForward = FloatArray(3)
             cameraPose.rotateVector(forward, 0, rotatedForward, 0)
-
-            val rotationQuat = OtherUtil.makeQuaternionLookRotation(rotatedForward, up)
+            //val rotationQuat = OtherUtil.makeQuaternionLookRotation(rotatedForward, up)
 
             val position = floatArrayOf(
                 cameraPose.tx() + rotatedForward[0],
                 cameraPose.ty() + rotatedForward[1],
                 cameraPose.tz() + rotatedForward[2]
             )
+
+            val lookRotation = cameraPose.rotationQuaternion
+            val flippedRotation = floatArrayOf(
+                -lookRotation[0], // x
+                -lookRotation[1], // y
+                -lookRotation[2], // z
+                lookRotation[3]  // w (회전 축은 반전하지 않음)
+            )
             //val rotationPose = Pose.makeRotationFromVectors(forward = out, up = up)
-            val anchorPose = Pose(position, rotationQuat)
+
+            val anchorPose = Pose(position, flippedRotation)
 
             anchor = session.createAnchor(anchorPose)
             Log.d("Render", "Anchor created successfully")
@@ -238,13 +309,13 @@ class StereoARRenderer(
 
         GLES20.glViewport(eyeGap, 0, eyeWidth, screenHeight)
         drawScene(leftEyeMatrix)
-        if (camera.trackingState == TrackingState.TRACKING && anchor != null) {
+        if (anchor != null && ::mediaPlayer.isInitialized) {
             drawPlane(anchorMatrix, viewMatrix, projectionMatrix)
         }
 
         GLES20.glViewport(screenWidth - eyeWidth - eyeGap, 0, eyeWidth, screenHeight)
         drawScene(rightEyeMatrix)
-        if (camera.trackingState == TrackingState.TRACKING && anchor != null) {
+        if (anchor != null && ::mediaPlayer.isInitialized) {
             drawPlane(anchorMatrix, viewMatrix, projectionMatrix)
         }
     }
@@ -297,10 +368,13 @@ class StereoARRenderer(
         val mvpMatrixHandle = GLES20.glGetUniformLocation(planeShaderProgram, "uMVPMatrix")
         val texSamplerHandle = GLES20.glGetUniformLocation(planeShaderProgram, "u_texture")
 
+        val depthTexHandle = GLES20.glGetUniformLocation(planeShaderProgram, "u_DepthTexture")
         val modelViewMatrix = FloatArray(16)
         val mvpMatrix = FloatArray(16)
         Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, anchorMatrix, 0)
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, modelViewMatrix, 0)
+
+        //GLES20.glEnable(GLES20.GL_DEPTH_TEST)
 
         GLES20.glUseProgram(planeShaderProgram)
         GLES20.glEnableVertexAttribArray(positionHandle)
@@ -314,6 +388,12 @@ class StereoARRenderer(
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, videoTextureId)
         GLES20.glUniform1i(texSamplerHandle,  0)
 
+        /*
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTextureId[0])
+        GLES20.glUniform1i(depthTexHandle, 1)
+        */
+
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 
         val error = GLES20.glGetError()
@@ -323,5 +403,52 @@ class StereoARRenderer(
 
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texHandle)
+    }
+
+    fun togglePlayPause() {
+        if (mediaPlayer.isPlaying) {
+            mediaPlayer.pause()
+        } else {
+            mediaPlayer.start()
+        }
+    }
+
+    fun skipForward() {
+        val newPosition = mediaPlayer.currentPosition + 10000
+        mediaPlayer.seekTo(newPosition)
+    }
+
+    fun skipBackward() {
+        val newPosition = mediaPlayer.currentPosition - 10000
+        mediaPlayer.seekTo(newPosition.coerceAtLeast(0))
+    }
+
+    fun setVideoUri(context: Context, uri: Uri) {
+        Log.d("setvideoUri", "starting uri")
+        videoUri = uri
+
+        if(!::mediaPlayer.isInitialized) {
+            mediaPlayer = MediaPlayer()
+        } else {
+            mediaPlayer?.reset()
+        }
+
+        mediaPlayer = MediaPlayer().apply {
+            setDataSource(context, uri)
+            setSurface(Surface(videoTexture))
+            isLooping = true
+            prepare()
+            start()
+        }
+        Log.d("setvideoUri", "ending uri")
+    }
+
+    fun moveAnchor(dx: Float, dy: Float, dz: Float) {
+        val currentPose = anchor?.pose ?: return
+        val newPose = currentPose.compose(Pose.makeTranslation(dx, dy, dz))
+
+        anchor?.detach()
+
+        anchor = session.createAnchor(newPose)
     }
 }

@@ -16,7 +16,7 @@ import androidx.activity.result.ActivityResultLauncher
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "arcore_channel"
     private var arSession: Session? = null
-    private var scanLauncher: ActivityResultLauncher<ScanOptions>? = null
+    private val QR_SCAN_REQUEST = 1001
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,8 +46,8 @@ class MainActivity : FlutterActivity() {
                     } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
                 }
                 "connectToPC" -> {
-                    val response = ConnectPC.connect()
-                    result.success(response)
+                    val intent = Intent(this, QRScanActivity::class.java)
+                    startActivity(intent)
                 }
                 else -> result.notImplemented()
             }
