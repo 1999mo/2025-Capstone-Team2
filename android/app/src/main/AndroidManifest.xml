@@ -14,6 +14,9 @@
     <!-- 인터넷 권한 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 문자 메시지 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:label="capstone_2"
         android:name="${applicationName}"

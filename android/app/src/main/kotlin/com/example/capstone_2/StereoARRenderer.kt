@@ -22,6 +22,10 @@ import com.example.capstone_2.OtherUtil.crossProduct
 import com.example.capstone_2.OtherUtil.normalize
 import com.google.ar.core.Plane
 import com.google.ar.core.exceptions.NotYetAvailableException
+import android.graphics.BitmapFactory
+import android.opengl.GLUtils
+import com.example.eogmodule.EOGManager
+import kotlin.math.*
 
 class StereoARRenderer(
     private val session: Session,
@@ -37,8 +41,11 @@ class StereoARRenderer(
     private var planeMvpMatrixHandle: Int = 0
     private var planePositionHandle: Int = 0
     private var planeColorHandle: Int = 0
+    private var menuShaderProgram: Int = 0
     //private var cameraTextureId: Int = -1
     private var oesTextureId: Int = -1
+    private lateinit var videoRenderer: VideoRenderer
+    private var selection: Int = 0
 
     private val leftEyeMatrix = FloatArray(16)
     private val rightEyeMatrix = FloatArray(16)
@@ -64,9 +71,12 @@ class StereoARRenderer(
     var videoTextureId: Int = 0
     val depthTextureId = IntArray(1)
     private var videoUri: Uri? = null
+    lateinit var iconTextureIds: IntArray
+    lateinit var textRenderer: TextRenderer
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         Log.d("Render", "onSurfaceCreated")
+        val eogManager = EOGManager(context)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
 
         oesTextureId = GlUtil.createOESTexture()
@@ -81,6 +91,8 @@ class StereoARRenderer(
         videoTexture.setOnFrameAvailableListener {
 
         }
+        videoRenderer = VideoRenderer(context)
+        videoRenderer.setVideoTexture(videoTextureId)
 
         videoUri?.let { uri ->
             setVideoUri(context, uri)
@@ -197,6 +209,50 @@ class StereoARRenderer(
         planePositionHandle = GLES20.glGetAttribLocation(planeShaderProgram, "a_Position")
         planeMvpMatrixHandle = GLES20.glGetUniformLocation(planeShaderProgram, "uMVPMatrix")
         planeColorHandle = GLES20.glGetUniformLocation(planeShaderProgram, "u_Color")
+
+        val menuVertexShaderCode = """
+            attribute vec4 a_Position;
+            attribute vec2 a_TexCoord;
+            uniform mat4 uMVPMatrix;
+            varying vec2 v_TexCoord;
+            
+            void main() {
+                gl_Position = uMVPMatrix * a_Position;
+                v_TexCoord = a_TexCoord;
+            }
+        """
+
+        val menuFragmentShaderCode = """
+            precision mediump float;
+            uniform sampler2D u_Texture;
+            varying vec2 v_TexCoord;
+
+            void main() {
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(v_TexCoord, center);
+                
+                if (dist > 0.5) {
+                    discard;
+                }
+
+                gl_FragColor = texture2D(u_Texture, v_TexCoord);
+            }
+        """
+
+        menuShaderProgram = ShaderUtil.createProgram(menuVertexShaderCode, menuFragmentShaderCode)
+
+        iconTextureIds = IntArray(8)
+        iconTextureIds[0] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[1] = loadTexture(context, R.drawable.icon2)
+        iconTextureIds[2] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[3] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[4] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[5] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[6] = loadTexture(context, R.drawable.icon1)
+        iconTextureIds[7] = loadTexture(context, R.drawable.icon1)
+
+        textRenderer = TextRenderer()
+        textRenderer.updateText()
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -307,16 +363,39 @@ class StereoARRenderer(
         camera.getViewMatrix(viewMatrix, 0)
         camera.getProjectionMatrix(projectionMatrix, 0, 0.1f, 100.0f)
 
+        //ui matrix
+        val uiProjectionMatrix = FloatArray(16)
+        val uiModelMatrix = FloatArray(16)
+        val uiMvpMatrix = FloatArray(16)
+
+        Matrix.orthoM(uiProjectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
+        Matrix.setIdentityM(uiModelMatrix, 0)
+        Matrix.multiplyMM(uiMvpMatrix, 0, uiProjectionMatrix, 0, uiModelMatrix, 0)
+
         GLES20.glViewport(eyeGap, 0, eyeWidth, screenHeight)
         drawScene(leftEyeMatrix)
+        if (!::mediaPlayer.isInitialized) {
+            drawCircleIcons(uiMvpMatrix, iconTextureIds)
+        }
         if (anchor != null && ::mediaPlayer.isInitialized) {
-            drawPlane(anchorMatrix, viewMatrix, projectionMatrix)
+            if (selection == 0) {
+                textRenderer.drawTextLabel(anchorMatrix, viewMatrix, projectionMatrix)
+            } else if (selection == 1) {
+                videoRenderer.draw(anchorMatrix, viewMatrix, projectionMatrix)
+            }
         }
 
         GLES20.glViewport(screenWidth - eyeWidth - eyeGap, 0, eyeWidth, screenHeight)
         drawScene(rightEyeMatrix)
+        if (!::mediaPlayer.isInitialized) {
+            drawCircleIcons(uiMvpMatrix, iconTextureIds)
+        }
         if (anchor != null && ::mediaPlayer.isInitialized) {
-            drawPlane(anchorMatrix, viewMatrix, projectionMatrix)
+            if (selection == 0) {
+                textRenderer.drawTextLabel(anchorMatrix, viewMatrix, projectionMatrix)
+            } else if (selection == 1) {
+                videoRenderer.draw(anchorMatrix, viewMatrix, projectionMatrix)
+            }
         }
     }
 
@@ -341,16 +420,17 @@ class StereoARRenderer(
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
     }
 
+    /*
     private fun drawPlane(
         anchorMatrix: FloatArray,
         viewMatrix: FloatArray,
         projectionMatrix: FloatArray
     ) {
         val quadCoords = floatArrayOf(
-            -0.5f, 0f, -0.5f,
-            0.5f, 0f, -0.5f,
-            -0.5f, 0f,  0.5f,
-            0.5f, 0f,  0.5f
+            -1.0f, 0f, -0.5f,
+            1.0f, 0f, -0.5f,
+            -1.0f, 0f,  0.5f,
+            1.0f, 0f,  0.5f
         )
 
         val texCoords = floatArrayOf(
@@ -403,6 +483,122 @@ class StereoARRenderer(
 
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texHandle)
+    }*/
+
+    private fun drawCircleIcons(
+        mvpMatrix: FloatArray,
+        iconTextureIds: IntArray
+    ) {
+        GLES20.glUseProgram(menuShaderProgram)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+
+        val squareCoords = floatArrayOf(
+            -0.5f,  0.5f, 0f,
+            -0.5f, -0.5f, 0f,
+            0.5f, -0.5f, 0f,
+            0.5f,  0.5f, 0f
+        )
+
+        val texCoords = floatArrayOf(
+            0f, 0f,
+            0f, 1f,
+            1f, 1f,
+            1f, 0f
+        )
+
+        val vertexBuffer = GlUtil.createFloatBuffer(squareCoords)
+        val texBuffer = GlUtil.createFloatBuffer(texCoords)
+
+        val posHandle = GLES20.glGetAttribLocation(menuShaderProgram, "a_Position")
+        val texHandle = GLES20.glGetAttribLocation(menuShaderProgram, "a_TexCoord")
+        val mvpHandle = GLES20.glGetUniformLocation(menuShaderProgram, "uMVPMatrix")
+        val texSamplerHandle = GLES20.glGetUniformLocation(menuShaderProgram, "u_Texture")
+
+        GLES20.glEnableVertexAttribArray(posHandle)
+        GLES20.glVertexAttribPointer(posHandle, 3, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+
+        GLES20.glEnableVertexAttribArray(texHandle)
+        GLES20.glVertexAttribPointer(texHandle, 2, GLES20.GL_FLOAT, false, 0, texBuffer)
+
+        val columns = 4
+        val rows = 2
+        val spacingX = 0.4f
+        val spacingY = 0.4f
+
+        val startX = -((columns - 1) * spacingX) / 2f
+        val startY = ((rows - 1) * spacingY) / 2f
+
+        val totalIcons = minOf(iconTextureIds.size, columns * rows)
+
+        var selectedX = 0f
+        var selectedY = 0f
+        var selected = false
+
+        for (i in 0 until totalIcons) {
+            val col = i % columns
+            val row = i / columns
+
+            val x = startX + col * spacingX
+            val y = startY - row * spacingY
+
+            val modelMatrix = FloatArray(16)
+            Matrix.setIdentityM(modelMatrix, 0)
+            Matrix.translateM(modelMatrix, 0, x, y, 0f)
+            Matrix.scaleM(modelMatrix, 0, 0.2f, 0.2f, 1f)
+
+            val finalMatrix = FloatArray(16)
+            Matrix.multiplyMM(finalMatrix, 0, mvpMatrix, 0, modelMatrix, 0)
+            GLES20.glUniformMatrix4fv(mvpHandle, 1, false, finalMatrix, 0)
+
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, iconTextureIds[i])
+            GLES20.glUniform1i(texSamplerHandle, 0)
+
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, 4)
+            Log.d("TextureDebug", "Drawing icon $i at ($x, $y) with texture ID: ${iconTextureIds[i]}")
+
+            if (i == selection) {
+                selectedX = x
+                selectedY = y
+                selected = true
+            }
+        }
+
+        GLES20.glDisableVertexAttribArray(texHandle)
+
+        if (selected) {
+            Log.d("selected icons", "Selection: $selection, X: $selectedX, Y: $selectedY")
+            val modelMatrix = FloatArray(16)
+            Matrix.setIdentityM(modelMatrix, 0)
+            Matrix.translateM(modelMatrix, 0, selectedX, selectedY, 0.01f)
+            Matrix.scaleM(modelMatrix, 0, 0.26f, 0.26f, 1f)
+
+            val finalMatrix = FloatArray(16)
+            Matrix.multiplyMM(finalMatrix, 0, mvpMatrix, 0, modelMatrix, 0)
+
+            val circleCoords = FloatArray(362 * 3)
+            for (i in 0..361) {
+                val angle = Math.toRadians(i.toDouble())
+                circleCoords[i * 3] = cos(angle).toFloat()
+                circleCoords[i * 3 + 1] = sin(angle).toFloat()
+                circleCoords[i * 3 + 2] = 0f
+            }
+
+            val circleBuffer = GlUtil.createFloatBuffer(circleCoords)
+
+            GLES20.glVertexAttribPointer(posHandle, 3, GLES20.GL_FLOAT, false, 0, circleBuffer)
+            GLES20.glEnableVertexAttribArray(posHandle)
+
+            GLES20.glUniformMatrix4fv(mvpHandle, 1, false, finalMatrix, 0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+
+            GLES20.glLineWidth(3f)
+            GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, 362)
+        }
+
+        GLES20.glDisableVertexAttribArray(posHandle)
+        GLES20.glDisableVertexAttribArray(texHandle)
     }
 
     fun togglePlayPause() {
@@ -450,5 +646,31 @@ class StereoARRenderer(
         anchor?.detach()
 
         anchor = session.createAnchor(newPose)
+    }
+
+    fun loadTexture(context: Context, resourceId: Int): Int {
+        val textureIds = IntArray(1)
+        GLES20.glGenTextures(1, textureIds, 0)
+
+        if (textureIds[0] == 0) {
+            throw RuntimeException("Error generating texture ID")
+        }
+
+        val options = BitmapFactory.Options()
+        options.inScaled = false // no pre-scaling
+
+        val bitmap = BitmapFactory.decodeResource(context.resources, resourceId, options)
+            ?: throw RuntimeException("Error loading bitmap")
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureIds[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+        bitmap.recycle()
+
+        return textureIds[0]
     }
 }

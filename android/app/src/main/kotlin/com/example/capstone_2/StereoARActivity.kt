@@ -48,6 +48,20 @@ class StereoARActivity : Activity() {
             }
         }
 
+        val forwardButton = Button(this).apply {
+            text = ">"
+            setOnClickListener {
+                renderer.skipForward()
+            }
+        }
+
+        val backwardButton = Button(this).apply {
+            text = "<"
+            setOnClickListener {
+                renderer.skipBackward()
+            }
+        }
+
         val pickButton = Button(this).apply {
             text = "영상 선택"
             setOnClickListener {
@@ -61,14 +75,6 @@ class StereoARActivity : Activity() {
 
         val layout = FrameLayout(this)
         layout.addView(glSurfaceView)
-        layout.addView(pickButton, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            topMargin = 32
-            rightMargin = 32
-        })
 
         setContentView(layout)
     }
