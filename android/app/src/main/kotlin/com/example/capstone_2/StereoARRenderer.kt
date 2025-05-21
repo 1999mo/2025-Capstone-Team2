@@ -42,6 +42,7 @@ class StereoARRenderer(
     private var planePositionHandle: Int = 0
     private var planeColorHandle: Int = 0
     private var menuShaderProgram: Int = 0
+    private var circleHighlight: Int = 0
     //private var cameraTextureId: Int = -1
     private var oesTextureId: Int = -1
     private lateinit var videoRenderer: VideoRenderer
@@ -252,7 +253,27 @@ class StereoARRenderer(
         iconTextureIds[7] = loadTexture(context, R.drawable.icon1)
 
         textRenderer = TextRenderer()
-        textRenderer.updateText()
+        textRenderer.updateText("Hello World")
+
+        val highlightVertexShaderCode = """
+            attribute vec4 a_Position;
+            uniform mat4 uMVPMatrix;
+            
+            void main() {
+                gl_Position = uMVPMatrix * a_Position;
+            }
+        """
+
+        val highlightFragmentShaderCode = """
+            precision mediump float;
+            uniform vec4 u_Color;
+            
+            void main() {
+                gl_FragColor = u_Color;
+            }
+        """
+
+        circleHighlight = ShaderUtil.createProgram(highlightVertexShaderCode, highlightFragmentShaderCode)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -565,6 +586,7 @@ class StereoARRenderer(
             }
         }
 
+        GLES20.glDisableVertexAttribArray(posHandle)
         GLES20.glDisableVertexAttribArray(texHandle)
 
         if (selected) {
@@ -587,18 +609,23 @@ class StereoARRenderer(
 
             val circleBuffer = GlUtil.createFloatBuffer(circleCoords)
 
+            GLES20.glUseProgram(circleHighlight)
+
+            val posHandle = GLES20.glGetAttribLocation(circleHighlight, "a_Position")
+            val mvpHandle = GLES20.glGetUniformLocation(circleHighlight, "uMVPMatrix")
+            val colorHandle = GLES20.glGetUniformLocation(circleHighlight, "u_Color")
+
             GLES20.glVertexAttribPointer(posHandle, 3, GLES20.GL_FLOAT, false, 0, circleBuffer)
             GLES20.glEnableVertexAttribArray(posHandle)
 
             GLES20.glUniformMatrix4fv(mvpHandle, 1, false, finalMatrix, 0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+            GLES20.glUniform4f(colorHandle, 1f, 1f, 0f, 1f)
 
             GLES20.glLineWidth(3f)
             GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, 362)
-        }
 
-        GLES20.glDisableVertexAttribArray(posHandle)
-        GLES20.glDisableVertexAttribArray(texHandle)
+            GLES20.glDisableVertexAttribArray(posHandle)
+        }
     }
 
     fun togglePlayPause() {
@@ -672,5 +699,13 @@ class StereoARRenderer(
         bitmap.recycle()
 
         return textureIds[0]
+    }
+
+    fun setSelection(direction: String) {
+        selection = when (direction) {
+            "LEFT" -> if (selection == 0) 7 else selection - 1
+            "RIGHT" -> if (selection == 7) 0 else selection + 1
+            else -> selection
+        }
     }
 }

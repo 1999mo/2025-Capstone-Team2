@@ -72,7 +72,8 @@ class TextRenderer {
         shaderProgram = createProgram(vertexShaderCode, fragmentShaderCode)
     }
 
-    fun updateText() {
+    fun updateText(newText: String) {
+        text = newText
         val paint = Paint().apply {
             isAntiAlias = true
             textSize = 48f
@@ -191,8 +192,8 @@ class TextRenderer {
         return program
     }
 
-    fun connect() {
-        val serverUri = ""
+    fun connect(serverUri: String) {
+        //val ServerUri = ""
 
         val uri = URI(serverUri)
 
@@ -203,6 +204,10 @@ class TextRenderer {
 
             override fun onMessage(message: String?) {
                 println("Received: $message")
+                message?.let {
+                    updateText(it)
+                    //메시지 수신
+                }
             }
 
             override fun onClose(code: Int, reason: String?, remote: Boolean) {
@@ -219,9 +224,10 @@ class TextRenderer {
 
     fun sendMessage(toId: String, message: String) {
         if (::client.isInitialized && client.isOpen) {
-            //val msg = ChatMessage(fromId = myId, toId = toId, message = message)
-            //val json = gson.toJson(msg)
-            //client.send(json)
+            //val msg = ChatMessage(fromId = myI`d, toId = toId, message = message)
+            val msg = "Hello World"
+            val json = gson.toJson(msg)
+            client.send(json)
         } else {
             println("WebSocket not connected")
         }

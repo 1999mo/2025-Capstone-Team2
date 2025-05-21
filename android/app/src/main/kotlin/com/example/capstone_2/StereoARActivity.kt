@@ -12,14 +12,22 @@ import android.widget.FrameLayout
 import android.view.Gravity
 import android.content.Intent
 import android.net.Uri
+import com.example.eogmodule.EOGManager
+import java.util.UUID
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
 
 class StereoARActivity : Activity() {
-
     private lateinit var glSurfaceView: GLSurfaceView
     private var arSession: Session? = null
     private lateinit var renderer: StereoARRenderer
     private val PICK_VIDEO_REQUEST = 1001
 
+    private lateinit var eogManager: EOGManager
+    private val DEVICE_NAME = "EOG_DEVICE"
+    private val MY_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+    private val REQUEST_CODE_PERMISSIONS = 10
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.d("Activity", "onCreate")
@@ -39,6 +47,34 @@ class StereoARActivity : Activity() {
             renderer = StereoARRenderer(arSession!!, this@StereoARActivity)
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        }
+
+        checkBluetoothPermissions()
+        eogManager = EOGManager(this)
+
+        eogManager.setEOGEventListener(object : EOGManager.EOGEventListener {
+            override fun onRawData(rawData: String?) {
+                Log.d("EOG", "Raw data: $rawData")
+            }
+        })
+
+        eogManager.setHorizontalListener { direction ->
+            val message = "Horizontal move: $direction"
+            runOnUiThread {
+                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            }
+
+            glSurfaceView.queueEvent {
+                renderer.setSelection(direction)
+            }
+        }
+
+        val connectButton = Button(this).apply {
+            text = "EOG 연결"
+            setOnClickListener {
+                checkBluetoothPermissions()
+                eogManager.connect(DEVICE_NAME, MY_UUID)
+            }
         }
 
         val pauseButton = Button(this).apply {
@@ -76,6 +112,17 @@ class StereoARActivity : Activity() {
         val layout = FrameLayout(this)
         layout.addView(glSurfaceView)
 
+        val layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            marginEnd = 32
+            topMargin = 32
+        }
+
+        layout.addView(connectButton, layoutParams)
+
         setContentView(layout)
     }
 
@@ -93,6 +140,7 @@ class StereoARActivity : Activity() {
 
     override fun onDestroy() {
         arSession?.close()
+        eogManager.disconnect()
         super.onDestroy()
     }
 
@@ -105,6 +153,21 @@ class StereoARActivity : Activity() {
                 glSurfaceView.queueEvent {
                     renderer.setVideoUri(this, selectedVideoUri)
                 }
+            }
+        }
+    }
+
+    private fun checkBluetoothPermissions() {
+        val permissions = listOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+        permissions.forEach {
+            if (checkSelfPermission(it) == PackageManager.PERMISSION_DENIED) {
+                requestPermissions(arrayOf(it), REQUEST_CODE_PERMISSIONS)
             }
         }
     }
