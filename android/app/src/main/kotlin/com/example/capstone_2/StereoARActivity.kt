@@ -29,6 +29,9 @@ class StereoARActivity : Activity() {
     private val MY_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val REQUEST_CODE_PERMISSIONS = 10
 
+    lateinit var sttMessage: STTMessage
+    private var listening: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.d("Activity", "onCreate")
         super.onCreate(savedInstanceState)
@@ -59,13 +62,30 @@ class StereoARActivity : Activity() {
         })
 
         eogManager.setHorizontalListener { direction ->
-            val message = "Horizontal move: $direction"
-            runOnUiThread {
-                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-            }
-
             glSurfaceView.queueEvent {
                 renderer.setSelection(direction)
+            }
+        }
+
+        sttMessage = STTMessage(this)
+        sttMessage.onResult = { result ->
+            runOnUiThread {
+                glSurfaceView.queueEvent {
+                    renderer.getSTT(result)
+                }
+            }
+        }
+
+        val sttButton = Button(this).apply {
+            text = "STT"
+            setOnClickListener {
+                if(!listening) {
+                    sttMessage.startListening()
+                    listening = !listening
+                } else {
+                    sttMessage.stopListening()
+                    listening = !listening
+                }
             }
         }
 
@@ -109,10 +129,17 @@ class StereoARActivity : Activity() {
             }
         }
 
+        val menuButton = Button(this).apply {
+            text = "메뉴 선택"
+            setOnClickListener {
+                renderer.selectMenu()
+            }
+        }
+
         val layout = FrameLayout(this)
         layout.addView(glSurfaceView)
 
-        val layoutParams = FrameLayout.LayoutParams(
+        var layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
@@ -120,8 +147,17 @@ class StereoARActivity : Activity() {
             marginEnd = 32
             topMargin = 32
         }
-
         layout.addView(connectButton, layoutParams)
+
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            marginEnd = 32
+            topMargin = 32 + 96
+        }
+        layout.addView(sttButton, layoutParams)
 
         setContentView(layout)
     }
@@ -141,6 +177,7 @@ class StereoARActivity : Activity() {
     override fun onDestroy() {
         arSession?.close()
         eogManager.disconnect()
+        sttMessage.destroy()
         super.onDestroy()
     }
 
@@ -165,10 +202,12 @@ class StereoARActivity : Activity() {
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
 
-        permissions.forEach {
-            if (checkSelfPermission(it) == PackageManager.PERMISSION_DENIED) {
-                requestPermissions(arrayOf(it), REQUEST_CODE_PERMISSIONS)
+        permissions.forEach { permission ->
+            val granted = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                requestPermissions(arrayOf(permission), REQUEST_CODE_PERMISSIONS)
             }
+            Log.d("권한요청: ", "$permission: ${if (granted) "GRANTED" else "DENIED"}")
         }
     }
 }

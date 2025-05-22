@@ -10,6 +10,7 @@ import android.util.Log
 
 class STTMessage(private val activity: Activity) {
     var text: String = ""
+    var onResult: ((String) -> Unit)? = null
 
     private val speechRecognizer: SpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(activity)
     private val recognizerIntent: Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -37,6 +38,7 @@ class STTMessage(private val activity: Activity) {
                 if (!matches.isNullOrEmpty()) {
                     text = matches[0]
                     Log.d("STT", "onResults: $text")
+                    onResult?.invoke(text)
                 }
             }
 

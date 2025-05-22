@@ -29,7 +29,7 @@ import kotlin.math.*
 
 class StereoARRenderer(
     private val session: Session,
-    private val context: Context
+    private val context: Context,
 ) : GLSurfaceView.Renderer {
 
     private var screenWidth = 0
@@ -74,6 +74,9 @@ class StereoARRenderer(
     private var videoUri: Uri? = null
     lateinit var iconTextureIds: IntArray
     lateinit var textRenderer: TextRenderer
+    var currentText: String = "Null"
+
+    val menuSelected = false
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         Log.d("Render", "onSurfaceCreated")
@@ -395,10 +398,11 @@ class StereoARRenderer(
 
         GLES20.glViewport(eyeGap, 0, eyeWidth, screenHeight)
         drawScene(leftEyeMatrix)
-        if (!::mediaPlayer.isInitialized) {
+        //::mediaPlayer.isInitialized
+        if (menuSelected) {
             drawCircleIcons(uiMvpMatrix, iconTextureIds)
         }
-        if (anchor != null && ::mediaPlayer.isInitialized) {
+        if (anchor != null) {
             if (selection == 0) {
                 textRenderer.drawTextLabel(anchorMatrix, viewMatrix, projectionMatrix)
             } else if (selection == 1) {
@@ -408,10 +412,10 @@ class StereoARRenderer(
 
         GLES20.glViewport(screenWidth - eyeWidth - eyeGap, 0, eyeWidth, screenHeight)
         drawScene(rightEyeMatrix)
-        if (!::mediaPlayer.isInitialized) {
+        if (menuSelected) {
             drawCircleIcons(uiMvpMatrix, iconTextureIds)
         }
-        if (anchor != null && ::mediaPlayer.isInitialized) {
+        if (anchor != null) {
             if (selection == 0) {
                 textRenderer.drawTextLabel(anchorMatrix, viewMatrix, projectionMatrix)
             } else if (selection == 1) {
@@ -707,5 +711,14 @@ class StereoARRenderer(
             "RIGHT" -> if (selection == 7) 0 else selection + 1
             else -> selection
         }
+    }
+
+    fun getSTT(text: String) {
+        currentText = text
+        textRenderer.updateText(currentText)
+    }
+
+    fun selectMenu() {
+        menuSelected = !menuSlected
     }
 }

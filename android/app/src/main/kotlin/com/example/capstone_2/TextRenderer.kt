@@ -14,6 +14,7 @@ import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
 import com.google.gson.*
+import android.util.Log
 
 class TextRenderer {
     private var shaderProgram = 0
@@ -123,6 +124,7 @@ class TextRenderer {
 
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
         bitmap.recycle()
+        Log.d("updateText", "onResults: $text")
     }
 
     fun drawTextLabel(anchorMatrix: FloatArray, viewMatrix: FloatArray, projectionMatrix: FloatArray) {
@@ -165,6 +167,7 @@ class TextRenderer {
         GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0)
         if (compileStatus[0] == 0) {
             val error = GLES20.glGetShaderInfoLog(shader)
+            Log.e("ShaderError", "Shader compile error:\n$error\nShader Code:\n$shaderCode")
             GLES20.glDeleteShader(shader)
             throw RuntimeException("Shader compile failed: $error")
         }
