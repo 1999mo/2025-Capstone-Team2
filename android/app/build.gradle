@@ -78,4 +78,5 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10'
     implementation("org.java-websocket:Java-WebSocket:1.5.3")
     implementation(name: 'EOGmodule-debug', ext: 'aar')
+    implementation 'com.google.mediapipe:hands:0.10.20'
 }

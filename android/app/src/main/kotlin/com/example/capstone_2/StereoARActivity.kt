@@ -1,27 +1,27 @@
 package com.example.capstone_2
 
+import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.os.Bundle
-import com.google.ar.core.Session
-import com.google.ar.core.Config
-import android.content.Context
 import android.util.Log
+import android.view.Gravity
 import android.widget.Button
 import android.widget.FrameLayout
-import android.view.Gravity
-import android.content.Intent
-import android.net.Uri
 import com.example.eogmodule.EOGManager
+import com.google.ar.core.Config
+import com.google.ar.core.Session
 import java.util.UUID
-import android.Manifest
-import android.content.pm.PackageManager
-import android.widget.Toast
+import android.graphics.Color
 
-class StereoARActivity : Activity() {
+class StereoARActivity : Activity(), SpeechController {
     private lateinit var glSurfaceView: GLSurfaceView
     private var arSession: Session? = null
     private lateinit var renderer: StereoARRenderer
+    private lateinit var handCheck: HandCheck
     private val PICK_VIDEO_REQUEST = 1001
 
     private lateinit var eogManager: EOGManager
@@ -34,6 +34,7 @@ class StereoARActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.d("Activity", "onCreate")
+        checkPermissions()
         super.onCreate(savedInstanceState)
 
         arSession = Session(this).apply {
@@ -45,120 +46,160 @@ class StereoARActivity : Activity() {
             configure(config)
         }
 
+        handCheck = HandCheck()
+
+        /*
+        processor.addPacketCallback("hand_landmarks") { packet ->
+            val multiHandLandmarks = PacketGetter.getProtoVector(packet, NormalizedLandmarkList.parser())
+            if (multiHandLandmarks.isNotEmpty()) {
+                handCheck.onHandLandmarksReceived(multiHandLandmarks[0]) // 첫번째 손만 처리
+            }
+        }
+        */
+
         glSurfaceView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
-            renderer = StereoARRenderer(arSession!!, this@StereoARActivity)
+            renderer = StereoARRenderer(arSession!!, this@StereoARActivity, this@StereoARActivity, this@StereoARActivity)
+            renderer.loadVideoUri(this@StereoARActivity, 10)
+            renderer.setHandCheck(handCheck)
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
 
-        checkBluetoothPermissions()
+        val serverUrl = intent.getStringExtra("SERVER_URL") ?: "ws://default.url:8080"
+        renderer.setServerUrl(serverUrl)
+
         eogManager = EOGManager(this)
 
         eogManager.setEOGEventListener(object : EOGManager.EOGEventListener {
-            override fun onRawData(rawData: String?) {
-                Log.d("EOG", "Raw data: $rawData")
+            override fun onEyeMovement(direction: EOGManager.Direction) {
+                //Toast.makeText(this@StereoARActivity, "EOG: $direction", Toast.LENGTH_SHORT).show()
+                glSurfaceView.queueEvent {
+                    renderer.sendDirection(direction)
+                }
+            }
+
+            override fun onRawData(rawData: String) {
+
             }
         })
 
-        eogManager.setHorizontalListener { direction ->
-            glSurfaceView.queueEvent {
-                renderer.setSelection(direction)
-            }
-        }
-
         sttMessage = STTMessage(this)
-        sttMessage.onResult = { result ->
-            runOnUiThread {
-                glSurfaceView.queueEvent {
-                    renderer.getSTT(result)
-                }
+        setSTT()
+
+        eogManager.connect(DEVICE_NAME, MY_UUID)
+
+        val leftButton = Button(this).apply {
+            text = "좌"
+            textSize = 16f
+            setPadding(20, 10, 20, 10)
+            setBackgroundColor(Color.LTGRAY)
+        }
+        val rightButton = Button(this).apply {
+            text = "우"
+            textSize = 16f
+            setPadding(20, 10, 20, 10)
+            setBackgroundColor(Color.LTGRAY)
+        }
+        val upButton = Button(this).apply {
+            text = "상"
+            textSize = 16f
+            setPadding(20, 10, 20, 10)
+            setBackgroundColor(Color.LTGRAY)
+        }
+        val downButton = Button(this).apply {
+            text = "하"
+            textSize = 16f
+            setPadding(20, 10, 20, 10)
+            setBackgroundColor(Color.LTGRAY)
+        }
+        val rightUpButton = Button(this).apply {
+            text = "우상"
+            textSize = 16f
+            setPadding(20, 10, 20, 10)
+            setBackgroundColor(Color.LTGRAY)
+        }
+
+        leftButton.setOnClickListener {
+            glSurfaceView.queueEvent {
+                renderer.sendDirection(EOGManager.Direction.LEFT)
             }
         }
 
-        val sttButton = Button(this).apply {
-            text = "STT"
-            setOnClickListener {
-                if(!listening) {
-                    sttMessage.startListening()
-                    listening = !listening
-                } else {
-                    sttMessage.stopListening()
-                    listening = !listening
-                }
+        rightButton.setOnClickListener {
+            glSurfaceView.queueEvent {
+                renderer.sendDirection(EOGManager.Direction.RIGHT)
             }
         }
 
-        val connectButton = Button(this).apply {
-            text = "EOG 연결"
-            setOnClickListener {
-                checkBluetoothPermissions()
-                eogManager.connect(DEVICE_NAME, MY_UUID)
+        upButton.setOnClickListener {
+            glSurfaceView.queueEvent {
+                renderer.sendDirection(EOGManager.Direction.UP)
             }
         }
 
-        val pauseButton = Button(this).apply {
-            text = "⏸"
-            setOnClickListener {
-                renderer.togglePlayPause()
+        downButton.setOnClickListener {
+            glSurfaceView.queueEvent {
+                renderer.sendDirection(EOGManager.Direction.DOWN)
             }
         }
 
-        val forwardButton = Button(this).apply {
-            text = ">"
-            setOnClickListener {
-                renderer.skipForward()
-            }
-        }
-
-        val backwardButton = Button(this).apply {
-            text = "<"
-            setOnClickListener {
-                renderer.skipBackward()
-            }
-        }
-
-        val pickButton = Button(this).apply {
-            text = "영상 선택"
-            setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    type = "video/*"
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                }
-                startActivityForResult(intent, PICK_VIDEO_REQUEST)
-            }
-        }
-
-        val menuButton = Button(this).apply {
-            text = "메뉴 선택"
-            setOnClickListener {
-                renderer.selectMenu()
+        rightUpButton.setOnClickListener {
+            glSurfaceView.queueEvent {
+                renderer.sendDirection(EOGManager.Direction.RIGHT_UP)
             }
         }
 
         val layout = FrameLayout(this)
         layout.addView(glSurfaceView)
 
+        /*
         var layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            marginEnd = 32
-            topMargin = 32
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            marginStart = 100
         }
-        layout.addView(connectButton, layoutParams)
+        layout.addView(leftButton, layoutParams)
+
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            marginEnd = 100
+        }
+        layout.addView(rightButton, layoutParams)
+
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            topMargin = 100
+        }
+        layout.addView(upButton, layoutParams)
+
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            bottomMargin = 100
+        }
+        layout.addView(downButton, layoutParams)
 
         layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            marginEnd = 32
-            topMargin = 32 + 96
+            marginEnd = 100
+            topMargin = 100
         }
-        layout.addView(sttButton, layoutParams)
-
+        layout.addView(rightUpButton, layoutParams)
+        */
         setContentView(layout)
     }
 
@@ -194,12 +235,34 @@ class StereoARActivity : Activity() {
         }
     }
 
-    private fun checkBluetoothPermissions() {
+    override fun startListening() {
+        if(!listening) {
+            sttMessage.startListening()
+            listening = true
+        } else {
+            sttMessage.stopListening()
+            listening = false
+        }
+    }
+
+    override fun setSTT() {
+        sttMessage.onResult = { result ->
+            runOnUiThread {
+                glSurfaceView.queueEvent {
+                    renderer.getSTT(result)
+                }
+            }
+        }
+    }
+
+    private fun checkPermissions() {
         val permissions = listOf(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO,
         )
 
         permissions.forEach { permission ->

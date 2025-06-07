@@ -12,12 +12,13 @@ import android.content.Intent
 import com.journeyapps.barcodescanner.ScanOptions
 import com.journeyapps.barcodescanner.ScanContract
 import androidx.activity.result.ActivityResultLauncher
+import android.widget.EditText
+import android.app.AlertDialog
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "arcore_channel"
     private var arSession: Session? = null
     private val QR_SCAN_REQUEST = 1001
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,16 +39,29 @@ class MainActivity : FlutterActivity() {
                 "adjustStereoFocus" -> {
                     arSession?.let { session ->
                         Log.d("Main", "channel call")
-                        val intent = Intent(this, StereoARActivity::class.java)
-                        startActivity(intent)
-                        //adjustStereoRendering(session, 1080, 1920)
-                        //setFocusMode(session)
+                        val editText = EditText(this)
+                        editText.hint = "ws://192.168.0.x:8080"
+
+                        AlertDialog.Builder(this)
+                            .setTitle("서버 주소 입력")
+                            .setView(editText)
+                            .setPositiveButton("연결") { _, _ ->
+                                val serverUrl = editText.text.toString().ifBlank {
+                                    "ws://default.url:8080"
+                                }
+
+                                val intent = Intent(this, StereoARActivity::class.java).apply {
+                                    putExtra("SERVER_URL", serverUrl)
+                                }
+
+                                startActivity(intent)
+                            }
+                            .setNegativeButton("취소", null)
+                            .show()
                         result.success("Adjusted")
                     } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
                 }
                 "connectToPC" -> {
-                    val intent = Intent(this, QRScanActivity::class.java)
-                    startActivity(intent)
                 }
                 else -> result.notImplemented()
             }

@@ -69,11 +69,6 @@ class _ARViewScreenState extends State<ARViewScreen> {
                 onPressed: adjustFocus,
                 child: Text("테스트"),
               ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: connectToPC,
-                child: Text("서버 연결"),
-              )
             ],
           ),
         ),
