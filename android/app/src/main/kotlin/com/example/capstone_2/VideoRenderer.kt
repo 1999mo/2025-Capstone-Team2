@@ -15,6 +15,7 @@ import android.media.MediaMetadataRetriever
 import kotlin.math.max
 import android.util.Log
 import android.opengl.GLES11Ext
+import android.os.Build
 
 class VideoRenderer(private val context: Context) {
     private val planeVertices: FloatBuffer
@@ -176,6 +177,17 @@ class VideoRenderer(private val context: Context) {
 
         GLES20.glUseProgram(program)
 
+        val planeVertices = ByteBuffer.allocateDirect(4 * 5 * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .put(floatArrayOf(
+                // X    Y     Z     U   V
+                -0.5f, -0.5f, 0f,  0f, 1f,
+                0.5f, -0.5f, 0f,  1f, 1f,
+                -0.5f,  0.5f, 0f,  0f, 0f,
+                0.5f,  0.5f, 0f,  1f, 0f
+            ))
+
         planeVertices.position(0)
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 20, planeVertices)
         GLES20.glEnableVertexAttribArray(positionHandle)
@@ -298,8 +310,19 @@ class VideoRenderer(private val context: Context) {
             val projection = arrayOf(MediaStore.Video.Media._ID)
             val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
-            val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
-            val selectionArgs = arrayOf("DCIM/Camera%")
+            val selection: String?
+            val selectionArgs: Array<String>?
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
+                selectionArgs = arrayOf("DCIM/Camera%")
+            } else {
+                selection = "${MediaStore.Video.Media.DATA} LIKE ?"
+                selectionArgs = arrayOf("%DCIM/Camera%")
+            }
+
+            //val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
+            //val selectionArgs = arrayOf("DCIM/Camera%")
 
             val cursor = context.contentResolver.query(
                 uri,

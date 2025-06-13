@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.Color
+import android.graphics.BitmapFactory
 import android.opengl.GLES20
 import android.opengl.GLUtils
 import android.opengl.Matrix
@@ -56,7 +57,7 @@ class TextRenderer(
     private lateinit var client: WebSocketClient
     private var text = "Null"
     private var sttText = ""
-    private var textSizeFloat = 30f
+    private var textSizeFloat = 64f
     private var textureAspectRatio = 1.0f
     private var messageInText: String? = null
     private var messageInTextureId = -1
@@ -69,6 +70,9 @@ class TextRenderer(
     private var userId = "USER" //현재 휴대폰 id
     private var batchIndex = 0 //메시지 index
     private var batchSize = 5 //메세지 총 갯수
+
+    private var iconTexture = IntArray(3)
+    private var listening = false
 
     init {
         vertexBuffer = GlUtil.createFloatBuffer(squareCoords)
@@ -119,6 +123,10 @@ class TextRenderer(
         textureHandle = GLES20.glGetUniformLocation(shaderProgram, "u_Texture")
 
         messageList = loadMessage(context).toMutableList()
+
+        iconTexture[0] = loadTexture(context, R.drawable.mic)
+        iconTexture[1] = loadTexture(context, R.drawable.icon3)
+        iconTexture[2] = loadTexture(context, R.drawable.micn)
     }
 
     fun updateText(newText: String) {
@@ -190,6 +198,7 @@ class TextRenderer(
         }
 
         drawSTT()
+        drawIcon()
     }
 
     private fun getMessageBatch(): List<ChatMessage> {
@@ -301,8 +310,43 @@ class TextRenderer(
         GLES20.glDisableVertexAttribArray(posHandle)
     }
 
+    private fun drawMinibackGround(x: Float, y: Float) {
+        val width = 0.2f
+        val height = 0.2f
+
+        val left = x - width / 2f
+        val right = x + width / 2f
+        val top = y + height / 2f
+        val bottom = y - height / 2f
+
+        val coords = floatArrayOf(
+            left,  top,    0f,  // 좌상
+            left,  bottom, 0f,  // 좌하
+            right, bottom, 0f,  // 우하
+            right, top,    0f   // 우상
+        )
+        val buffer = ByteBuffer.allocateDirect(coords.size * 4)
+            .order(ByteOrder.nativeOrder()).asFloatBuffer()
+        buffer.put(coords).position(0)
+
+        val mvp = FloatArray(16)
+        Matrix.setIdentityM(mvp, 0)
+        val posHandle = GLES20.glGetAttribLocation(hudShader, "a_Position")
+        val mvpHandle = GLES20.glGetUniformLocation(hudShader, "uMVPMatrix")
+        val colorHandle = GLES20.glGetUniformLocation(hudShader, "u_Color")
+
+        GLES20.glUseProgram(hudShader)
+        GLES20.glEnableVertexAttribArray(posHandle)
+        GLES20.glVertexAttribPointer(posHandle, 3, GLES20.GL_FLOAT, false, 0, buffer)
+
+        GLES20.glUniformMatrix4fv(mvpHandle, 1, false, mvp, 0)
+        GLES20.glUniform4f(colorHandle, 1f, 1f, 1f, 0.8f)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(posHandle)
+    }
+
     fun updateDrawInMessage() {
-        Log.d("updateDrawInMessage", "TextureID: $messageInTextureId")
         messageInText = "$fromId 로부터 문자가 왔습니다"
 
         val paint = Paint().apply {
@@ -338,45 +382,54 @@ class TextRenderer(
         Log.d("updateDrawInMessage", "TextureID: $messageInTextureId")
     }
 
+    fun setMic(stt: Boolean) {
+        listening = stt
+    }
+
     fun drawInMessage() {
-        val hudCoords = floatArrayOf(
-            -1f, 1f, 0f,
-            -1f, 0.7f, 0f,
-            -0.75f, 1f, 0f,
-            -0.75f, 0.7f, 0f
+        drawMinibackGround(-0.9f, 0.9f)
+
+        val vertices = floatArrayOf(
+            -1f,  1f, 0f,   // 왼쪽 위
+            1f,  1f, 0f,   // 오른쪽 위
+            -1f, -1f, 0f,   // 왼쪽 아래
+            1f, -1f, 0f    // 오른쪽 아래
         )
 
-        val hudVertexBuffer = GlUtil.createFloatBuffer(hudCoords)
+        val textureCoords = floatArrayOf(
+            0f, 0f,
+            1f, 0f,
+            0f, 1f,
+            1f, 1f
+        )
 
-        val projectionMatrix = FloatArray(16)
-        Matrix.orthoM(projectionMatrix, 0, -1f, 1f, -1f, 1f, -1f, 1f)
+        val leftMatrix = FloatArray(16)
+        Matrix.setIdentityM(leftMatrix, 0)
+        Matrix.translateM(leftMatrix, 0, -0.9f, 0.9f, 0f)
+        Matrix.scaleM(leftMatrix, 0, 0.1f, 0.1f, 1f)
 
         GLES20.glUseProgram(shaderProgram)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, iconTexture[1])
+        GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, leftMatrix, 0)
 
+        val vertexBuffer = ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        vertexBuffer.put(vertices).position(0)
+
+        val texBuffer = ByteBuffer.allocateDirect(textureCoords.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        texBuffer.put(textureCoords).position(0)
+
+        // position attribute
         GLES20.glEnableVertexAttribArray(positionHandle)
-        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, hudVertexBuffer)
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, vertexBuffer)
 
+        // texture coord attribute
         GLES20.glEnableVertexAttribArray(texCoordHandle)
         GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texBuffer)
-
-        val modelMatrix = FloatArray(16)
-        Matrix.setIdentityM(modelMatrix, 0)
-
-        val mvpMatrix = FloatArray(16)
-        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, modelMatrix, 0)
-
-        GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0)
-
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, messageInTextureId)
         GLES20.glUniform1i(textureHandle, 0)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-
-        GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texCoordHandle)
-
-        Log.d("drawInMessage", "TextureID: $messageInTextureId")
+        GLES20.glDisableVertexAttribArray(positionHandle)
     }
 
     private fun loadShader(type: Int, shaderCode: String): Int {
@@ -503,5 +556,117 @@ class TextRenderer(
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    fun loadTexture(context: Context, resourceId: Int): Int {
+        val textureIds = IntArray(1)
+        GLES20.glGenTextures(1, textureIds, 0)
+
+        if (textureIds[0] == 0) {
+            throw RuntimeException("Error generating texture ID")
+        }
+
+        val options = BitmapFactory.Options()
+        options.inScaled = false // no pre-scaling
+
+        val bitmap = BitmapFactory.decodeResource(context.resources, resourceId, options)
+            ?: throw RuntimeException("Error loading bitmap")
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureIds[0])
+        GLES20.glTexParameteri(
+            GLES20.GL_TEXTURE_2D,
+            GLES20.GL_TEXTURE_MIN_FILTER,
+            GLES20.GL_LINEAR
+        )
+        GLES20.glTexParameteri(
+            GLES20.GL_TEXTURE_2D,
+            GLES20.GL_TEXTURE_MAG_FILTER,
+            GLES20.GL_LINEAR
+        )
+        GLES20.glTexParameteri(
+            GLES20.GL_TEXTURE_2D,
+            GLES20.GL_TEXTURE_WRAP_S,
+            GLES20.GL_CLAMP_TO_EDGE
+        )
+        GLES20.glTexParameteri(
+            GLES20.GL_TEXTURE_2D,
+            GLES20.GL_TEXTURE_WRAP_T,
+            GLES20.GL_CLAMP_TO_EDGE
+        )
+
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+        bitmap.recycle()
+
+        return textureIds[0]
+    }
+
+    private fun drawIcon() {
+        val vertices = floatArrayOf(
+            -1f,  1f, 0f,   // 왼쪽 위
+            1f,  1f, 0f,   // 오른쪽 위
+            -1f, -1f, 0f,   // 왼쪽 아래
+            1f, -1f, 0f    // 오른쪽 아래
+        )
+
+        val textureCoords = floatArrayOf(
+            0f, 0f,
+            1f, 0f,
+            0f, 1f,
+            1f, 1f
+        )
+
+        val leftMatrix = FloatArray(16)
+        Matrix.setIdentityM(leftMatrix, 0)
+        Matrix.translateM(leftMatrix, 0, -0.9f, 0f, 0f)
+        Matrix.scaleM(leftMatrix, 0, 0.1f, 0.1f, 1f)
+
+        val rightMatrix = FloatArray(16)
+        Matrix.setIdentityM(rightMatrix, 0)
+        Matrix.translateM(rightMatrix, 0, 0.9f, 0f, 0f)
+        Matrix.scaleM(rightMatrix, 0, 0.1f, 0.1f, 1f)
+
+        GLES20.glUseProgram(shaderProgram)
+        if (listening) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, iconTexture[2])
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, iconTexture[0])
+        }
+        GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, leftMatrix, 0)
+
+        val vertexBuffer = ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        vertexBuffer.put(vertices).position(0)
+
+        val texBuffer = ByteBuffer.allocateDirect(textureCoords.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        texBuffer.put(textureCoords).position(0)
+
+        // position attribute
+        GLES20.glEnableVertexAttribArray(positionHandle)
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+
+        // texture coord attribute
+        GLES20.glEnableVertexAttribArray(texCoordHandle)
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texBuffer)
+        GLES20.glUniform1i(textureHandle, 0)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(texCoordHandle)
+        GLES20.glDisableVertexAttribArray(positionHandle)
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, iconTexture[1])
+        GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, rightMatrix, 0)
+        val vertexBufferR = ByteBuffer.allocateDirect(vertices.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        vertexBufferR.put(vertices).position(0)
+        GLES20.glEnableVertexAttribArray(positionHandle)
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, vertexBufferR)
+        GLES20.glEnableVertexAttribArray(texCoordHandle)
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texBuffer)
+        GLES20.glUniform1i(textureHandle, 0)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+
+        GLES20.glDisableVertexAttribArray(positionHandle)
+        GLES20.glDisableVertexAttribArray(texCoordHandle)
+
+        drawMinibackGround(-0.9f, 0f)
+        drawMinibackGround(0.9f, 0f)
     }
 }

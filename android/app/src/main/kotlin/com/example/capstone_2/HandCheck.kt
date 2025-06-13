@@ -4,23 +4,25 @@ import com.google.ar.core.Anchor
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.Frame
-import com.google.mediapipe.formats.proto.LandmarkProto.NormalizedLandmarkList
 import com.google.ar.core.Plane
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import android.util.Log
 
 class HandCheck() {
-    private var latestLandmarks: NormalizedLandmarkList? = null
+    private var latestLandmarks: List<NormalizedLandmark>? = null
 
 
-    fun onHandLandmarksReceived(landmarks: NormalizedLandmarkList) {
+    fun onHandLandmarksReceived(landmarks: List<NormalizedLandmark>) {
         latestLandmarks = landmarks
     }
 
-    fun getCurrentLandmarks(): NormalizedLandmarkList? {
+    fun getCurrentLandmarks(): List<NormalizedLandmark>? {
         return latestLandmarks
     }
 
     fun updateAnchorWithHand(session: Session, frame: Frame, xPx: Float, yPx: Float, currentAnchor: Anchor?): Anchor? {
         val hits = frame.hitTest(xPx, yPx)
+        Log.d("updateAnchorWithHand", "Hits: $hits")
         for (hit in hits) {
             if (hit.trackable is Plane && (hit.trackable as Plane).isPoseInPolygon(hit.hitPose)) {
                 currentAnchor?.detach()

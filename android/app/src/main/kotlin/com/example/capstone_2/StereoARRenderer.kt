@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
+import android.media.Image
 import android.net.Uri
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
@@ -33,7 +34,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.app.Activity
-
+import com.google.mediapipe.examples.handlandmarker.HandLandmarkerHelper
+import android.graphics.Bitmap
+import android.os.SystemClock
+import androidx.camera.core.ImageProxy
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class StereoARRenderer(
     private val session: Session,
@@ -59,7 +66,7 @@ class StereoARRenderer(
     private var menuIconProgram: Int = 0
     private var menuIconTexture: Int = -1
     private lateinit var videoRenderer: VideoRenderer
-    private var selection: Int = 0
+    private var selection: Int = 1
 
     private val leftEyeMatrix = FloatArray(16)
     private val rightEyeMatrix = FloatArray(16)
@@ -92,7 +99,7 @@ class StereoARRenderer(
 
     private var messageIn = false
 
-    var menuSelected = false
+    var menuSelected = true
 
     private var messageHandler = Handler(Looper.getMainLooper())
     private var handCheck: HandCheck? = null
@@ -101,8 +108,12 @@ class StereoARRenderer(
     private var pendingSelectionJob: Job? = null
     private var currentPendingDirection: EOGManager.Direction? = null
     private var pendingProgress: Float = 0f
+    private var handLandmarkerHelper: HandLandmarkerHelper? = null
+    private lateinit var yuvConverter: YuvToRgbConverter
 
     private var serverUrl: String = "ws://175.198.71.84:8080"
+    private var bitmapBuffer: Bitmap? = null
+    private var fingerCheck: Boolean = false
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         Log.d("Render", "onSurfaceCreated")
@@ -314,6 +325,8 @@ class StereoARRenderer(
 
         menuIconProgram = ShaderUtil.createProgram(menuVertexShaderCode, menuFragmentShaderCode)
         menuIconTexture = loadTexture(context, R.drawable.menuicon)
+
+        yuvConverter = YuvToRgbConverter(context)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -365,7 +378,7 @@ class StereoARRenderer(
         Log.d("Render", "Trying Anchor creation")
         Log.d("Render", "Tracking: ${camera.trackingState}, Anchor: $anchor")
         if (camera.trackingState == TrackingState.TRACKING && anchor == null) {
-            val cameraPose = camera.displayOrientedPose
+            /*val cameraPose = camera.displayOrientedPose
             val forward = floatArrayOf(0f, 0f, -2f)
             val up = floatArrayOf(0f, 1f, 0f)
             //val out = FloatArray(3)
@@ -391,7 +404,27 @@ class StereoARRenderer(
             val anchorPose = Pose(position, flippedRotation)
 
             anchor = session.createAnchor(anchorPose)
-            Log.d("Render", "Anchor created successfully")
+            Log.d("Render", "Anchor created successfully")*/
+            val cameraPose = camera.displayOrientedPose
+
+            // 카메라 앞쪽 방향으로 일정 거리 떨어진 위치
+            val forward = floatArrayOf(0f, 0f, -1.5f) // -Z 방향 (카메라 기준)
+            val rotatedForward = FloatArray(3)
+            cameraPose.rotateVector(forward, 0, rotatedForward, 0)
+
+            // 최종 Anchor 위치
+            val position = floatArrayOf(
+                cameraPose.tx() + rotatedForward[0],
+                cameraPose.ty() + rotatedForward[1],
+                cameraPose.tz() + rotatedForward[2]
+            )
+
+            // 카메라를 기준으로 평면이 카메라를 향하게 회전 (쿼터니언 유지)
+            val rotation = cameraPose.rotationQuaternion
+
+            // Anchor Pose 생성
+            val anchorPose = Pose(position, rotation)
+            anchor = session.createAnchor(anchorPose)
         }
 
         if(anchor != null) {
@@ -417,7 +450,7 @@ class StereoARRenderer(
         drawScene(leftEyeMatrix)
         //::mediaPlayer.isInitialized
         if(messageIn) {
-            textRenderer.updateDrawInMessage()
+            //textRenderer.updateDrawInMessage()
             textRenderer.drawInMessage()
         }
         if (!menuSelected) {
@@ -425,6 +458,9 @@ class StereoARRenderer(
         } else if (anchor != null) {
             drawMenuIcon()
             if (selection == 0) {
+                if(messageIn) {
+                    messageIn = false
+                }
                 textRenderer.drawBigText()
             } else if (selection == 1) {
                 //닫기
@@ -433,22 +469,70 @@ class StereoARRenderer(
                 imageRenderer.draw()
             } else if (selection == 3) {
                 videoRenderer.draw(anchorMatrix, viewMatrix, projectionMatrix)
-                /*
-                val handLandmarks = handCheck?.getCurrentLandmarks()
-                if (handLandmarks != null && handLandmarks.landmarkCount > 8) {
-                    val indexTip = handLandmarks.getLandmark(8)
-                    val xPx = indexTip.x * screenWidth / 2
-                    val yPx = indexTip.y * screenHeight
 
-                    anchor = handCheck?.updateAnchorWithHand(
-                        session,
-                        frame,
-                        xPx,
-                        yPx,
-                        anchor
+                if(fingerCheck) {
+                    val image = frame.acquireCameraImage()
+
+                    val width = image.getWidth()
+                    val height = image.getHeight()
+
+
+                    if (bitmapBuffer == null || bitmapBuffer?.width != width || bitmapBuffer?.height != height) {
+                        bitmapBuffer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    }
+                    yuvConverter.yuvToRgb(image, bitmapBuffer!!)
+
+                    val rotatedBitmap = Bitmap.createBitmap(
+                        bitmapBuffer!!,
+                        0,
+                        0,
+                        bitmapBuffer!!.width,
+                        bitmapBuffer!!.height,
+                        null,
+                        true
                     )
-                } //여기는 아직 작업중
-                */
+                    // 5. Bitmap → MPImage 변환
+                    val mpImage = BitmapImageBuilder(rotatedBitmap).build()
+
+                    // 6. HandLandmarker 실행
+                    val timestamp = SystemClock.uptimeMillis()
+                    handLandmarkerHelper?.detectAsync(mpImage, timestamp)
+
+                    // 7. Image 닫기
+                    image.close()
+
+                    val resultBundle = handLandmarkerHelper?.detectImage(rotatedBitmap)
+
+                    if (resultBundle != null) {
+                        // 결과가 있으면 여기서 처리
+                        Log.d(
+                            "HandLandmarker",
+                            "Detected landmarks: ${resultBundle.results[0].landmarks()}"
+                        )
+                        val handLandmarks = resultBundle.results[0].landmarks()
+                    } else {
+                        Log.e("HandLandmarker", "Hand Landmarker failed to detect.")
+                    }
+
+                    val results = resultBundle!!.results
+                    if (results.isNotEmpty()) {
+                        val landmarkLists = results[0].landmarks()
+                        if (landmarkLists.isNotEmpty() && landmarkLists[0].size > 8) {
+                            val indexTip = landmarkLists[0][8]
+                            val xPx = indexTip.x() * screenWidth / 2
+                            val yPx = indexTip.y() * screenHeight
+
+                            Log.d("handland", "xPx: $xPx, yPy: $yPx")
+                            anchor = handCheck?.updateAnchorWithHand(
+                                session,
+                                frame,
+                                xPx,
+                                yPx,
+                                anchor
+                            )
+                        }
+                    }
+                }
             }
         }
         if(currentPendingDirection != null) {
@@ -582,16 +666,16 @@ class StereoARRenderer(
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, 4)
             Log.d("TextureDebug", "Drawing icon $i at ($x, $y) with texture ID: ${iconTextureIds[i]}")
 
-            if (i == selection) {
-                selectedX = x
-                selectedY = y
-                selected = true
-            }
         }
 
         GLES20.glDisableVertexAttribArray(posHandle)
         GLES20.glDisableVertexAttribArray(texHandle)
 
+        for (i in 0 until totalIcons) {
+            val (x, y) = iconPositions[i]
+            drawCircleBackground(x, y)
+        }
+        /*
         if (selected) {
             Log.d("selected icons", "Selection: $selection, X: $selectedX, Y: $selectedY")
             val modelMatrix = FloatArray(16)
@@ -628,7 +712,49 @@ class StereoARRenderer(
             GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, 362)
 
             GLES20.glDisableVertexAttribArray(posHandle)
+        }*/
+    }
+
+    private fun drawCircleBackground(centerX: Float, centerY: Float) {
+        val radius = 0.1f
+        val segments = 60
+
+        val coords = FloatArray((segments + 2) * 3)  // (x, y, z) * (segments + center + last point)
+        coords[0] = centerX
+        coords[1] = centerY
+        coords[2] = 0f
+
+        for (i in 0..segments) {
+            val angle = 2.0 * Math.PI * i.toDouble() / segments
+            val x = (Math.cos(angle) * radius).toFloat()
+            val y = (Math.sin(angle) * radius).toFloat()
+
+            coords[(i + 1) * 3] = centerX + x
+            coords[(i + 1) * 3 + 1] = centerY + y
+            coords[(i + 1) * 3 + 2] = 0f
         }
+
+        val buffer = ByteBuffer.allocateDirect(coords.size * 4)
+            .order(ByteOrder.nativeOrder()).asFloatBuffer()
+        buffer.put(coords).position(0)
+
+        val mvp = FloatArray(16)
+        Matrix.setIdentityM(mvp, 0)
+
+        val posHandle = GLES20.glGetAttribLocation(circleHighlight, "a_Position")
+        val mvpHandle = GLES20.glGetUniformLocation(circleHighlight, "uMVPMatrix")
+        val colorHandle = GLES20.glGetUniformLocation(circleHighlight, "u_Color")
+
+        GLES20.glUseProgram(circleHighlight)
+        GLES20.glEnableVertexAttribArray(posHandle)
+        GLES20.glVertexAttribPointer(posHandle, 3, GLES20.GL_FLOAT, false, 0, buffer)
+
+        GLES20.glUniformMatrix4fv(mvpHandle, 1, false, mvp, 0)
+        GLES20.glUniform4f(colorHandle, 1f, 1f, 1f, 0.1f)  // 흰색 반투명 (alpha = 0.5)
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, segments + 2)
+
+        GLES20.glDisableVertexAttribArray(posHandle)
     }
 
     private fun drawMenuIcon() {
@@ -829,6 +955,14 @@ class StereoARRenderer(
         }
 
         fun sendDirection(direction: EOGManager.Direction) {
+            if (direction == EOGManager.Direction.LEFT_UP && messageIn == true) {
+                startPending(direction) {
+                    messageIn = false
+                    menuSelected = true
+                    selection = 0
+                }
+                // 문자 메시지 알림이 잇을 시에 바로 키기
+            }
             if (!menuSelected) {
                 if (direction != EOGManager.Direction.LEFT &&
                     direction != EOGManager.Direction.RIGHT &&
@@ -862,6 +996,7 @@ class StereoARRenderer(
                         }
 
                         EOGManager.Direction.DOWN -> {
+                            selection = 1
                             menuSelected = true
                             //menuSelected = !menuSelected
                         }
@@ -872,8 +1007,8 @@ class StereoARRenderer(
                     }
                 }
             } else {
-                if (direction == EOGManager.Direction.RIGHT_UP) {
-                    startPending(direction) {
+                if (direction == EOGManager.Direction.RIGHT_UP || direction == EOGManager.Direction.LEFT_DOWN) {
+                    startPending(EOGManager.Direction.RIGHT_UP) {
                         menuSelected = false
                         return@startPending
                     }
@@ -889,22 +1024,22 @@ class StereoARRenderer(
                     0 -> {
                         when (direction) {
                             EOGManager.Direction.LEFT -> {
-                                textRenderer.backwardMessage()
-                                //문자 뒤로
-                            }
-                            EOGManager.Direction.DOWN -> {
                                 activity.runOnUiThread {
                                     speechController.startListening()
                                 }
                                 //STT
                             }
-                            EOGManager.Direction.RIGHT -> {
-                                textRenderer.forwardMessage()
-                                //문자 앞으로
+                            EOGManager.Direction.DOWN -> {
+                                textRenderer.backwardMessage()
+                                //문자 뒤로
                             }
-                            EOGManager.Direction.UP -> {
+                            EOGManager.Direction.RIGHT -> {
                                 sendMessage()
                                 //문자 보내기
+                            }
+                            EOGManager.Direction.UP -> {
+                                textRenderer.forwardMessage()
+                                //문자 앞으로
                             }
                             else -> {
 
@@ -941,6 +1076,13 @@ class StereoARRenderer(
                             EOGManager.Direction.DOWN -> {
                                 togglePlayPause()
                             }
+                            EOGManager.Direction.UP -> {
+                                if(fingerCheck) {
+                                    fingerCheck = false
+                                } else {
+                                    fingerCheck = true
+                                }
+                            }
                             else -> {
 
                             }
@@ -956,9 +1098,7 @@ class StereoARRenderer(
 
     private fun startPending(direction: EOGManager.Direction, onConfirm: () -> Unit) {
         //Log.d("startPending", "Direction: $currentPendingDirection, Active: ${pendingSelectionJob?.isActive}")
-        if (currentPendingDirection == direction && pendingSelectionJob?.isActive == true) {
-            return
-        } else if (currentPendingDirection != direction && pendingSelectionJob?.isActive == true) {
+        if (pendingSelectionJob?.isActive == true) {
             pendingSelectionJob?.cancel()
             currentPendingDirection = null
             pendingProgress = 0f
@@ -970,7 +1110,7 @@ class StereoARRenderer(
         pendingProgress = 0f
 
         pendingSelectionJob = CoroutineScope(Dispatchers.Main).launch {
-            val duration = 1500L
+            val duration = 3000L
             val interval = 50L
             var elapsed = 0L
 
@@ -993,6 +1133,7 @@ class StereoARRenderer(
             EOGManager.Direction.LEFT -> Pair(-0.5f, 0f)
             EOGManager.Direction.RIGHT -> Pair(0.5f, 0f)
             EOGManager.Direction.RIGHT_UP -> Pair(0.8f, 0.8f)
+            EOGManager.Direction.LEFT_UP -> Pair(-0.8f, 0.8f)
             else -> Pair(0f, 0f)
         }
     }
@@ -1018,16 +1159,12 @@ class StereoARRenderer(
         }
 
     override fun onWebSocketMessage() {
-        if (!messageIn) {
-            playNotificationSound()
-        }
+        playNotificationSound()
 
-        messageIn = true
-
-        messageHandler.removeCallbacksAndMessages(null)
-        messageHandler.postDelayed({
-            messageIn = false
-        }, 5000)
+        if(selection != 0)
+            messageIn = true
+        if(!menuSelected)
+            messageIn = true
     }
 
     private fun playNotificationSound() {
@@ -1077,5 +1214,13 @@ class StereoARRenderer(
 
     fun setServerUrl(url: String) {
         serverUrl = url
+    }
+
+    fun textSetListening(stt: Boolean) {
+        textRenderer.setMic(stt)
+    }
+
+    fun setHandLandmarkerHelper(helper: HandLandmarkerHelper) {
+        this.handLandmarkerHelper = helper
     }
 }
