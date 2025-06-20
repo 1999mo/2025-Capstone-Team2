@@ -1,5 +1,7 @@
 package com.example.capstone_2
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import com.google.ar.core.Config
 import com.google.ar.core.Session
@@ -19,15 +21,10 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "arcore_channel"
     private var arSession: Session? = null
     private val QR_SCAN_REQUEST = 1001
+    private val REQUEST_CODE_PERMISSIONS = 10
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        try {
-            arSession = Session(this)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -37,29 +34,37 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "adjustStereoFocus" -> {
-                    arSession?.let { session ->
-                        Log.d("Main", "channel call")
-                        val editText = EditText(this)
-                        editText.hint = "ws://192.168.0.x:8080"
+                    try {
+                        arSession = Session(this)
 
-                        AlertDialog.Builder(this)
-                            .setTitle("서버 주소 입력")
-                            .setView(editText)
-                            .setPositiveButton("연결") { _, _ ->
-                                val serverUrl = editText.text.toString().ifBlank {
-                                    "ws://default.url:8080"
+                        arSession?.let { session ->
+                            checkPermissions()
+
+                            Log.d("Main", "channel call")
+                            val editText = EditText(this)
+                            editText.hint = "ws://192.168.0.x:8080"
+
+                            AlertDialog.Builder(this)
+                                .setTitle("서버 주소 입력")
+                                .setView(editText)
+                                .setPositiveButton("연결") { _, _ ->
+                                    val serverUrl = editText.text.toString().ifBlank {
+                                        "ws://default.url:8080"
+                                    }
+
+                                    val intent = Intent(this, StereoARActivity::class.java).apply {
+                                        putExtra("SERVER_URL", serverUrl)
+                                    }
+
+                                    startActivity(intent)
                                 }
-
-                                val intent = Intent(this, StereoARActivity::class.java).apply {
-                                    putExtra("SERVER_URL", serverUrl)
-                                }
-
-                                startActivity(intent)
-                            }
-                            .setNegativeButton("취소", null)
-                            .show()
-                        result.success("Adjusted")
-                    } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
+                                .setNegativeButton("취소", null)
+                                .show()
+                            result.success("Adjusted")
+                        } ?: result.error("SESSION_ERROR", "AR Session not initialized", null)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
                 "connectToPC" -> {
                 }
@@ -76,5 +81,26 @@ class MainActivity : FlutterActivity() {
         val config = Config(session)
         config.focusMode = Config.FocusMode.AUTO
         session.configure(config)
+    }
+
+    private fun checkPermissions() {
+        val permissions = listOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO,
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+
+        permissions.forEach { permission ->
+            val granted = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                requestPermissions(arrayOf(permission), REQUEST_CODE_PERMISSIONS)
+            }
+            Log.d("권한요청: ", "$permission: ${if (granted) "GRANTED" else "DENIED"}")
+        }
     }
 }

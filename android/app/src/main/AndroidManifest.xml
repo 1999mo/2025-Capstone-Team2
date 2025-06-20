@@ -34,7 +34,7 @@
 
 
     <application
-        android:label="capstone_2"
+        android:label="CAE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true">

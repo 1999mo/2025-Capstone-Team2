@@ -16,43 +16,12 @@ import com.google.ar.core.Config
 import com.google.ar.core.Session
 import java.util.UUID
 import android.graphics.Color
-import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
-import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
-import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.core.RunningMode
 
-import android.graphics.Bitmap
-import android.media.Image
-import android.util.Size
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.core.content.ContextCompat
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import java.util.concurrent.Executors
-import androidx.lifecycle.LifecycleOwner
-import java.util.concurrent.ExecutorService
 
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.Matrix
-import android.graphics.Rect
-import android.graphics.YuvImage
-import com.google.mediapipe.examples.handlandmarker.HandLandmarkerHelper
-import java.io.ByteArrayOutputStream
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
-import androidx.camera.core.Preview
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleRegistry
-import android.os.SystemClock
-import androidx.activity.ComponentActivity
-
-class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHelper.LandmarkerListener {
+class StereoARActivity : Activity(), SpeechController{
     private lateinit var glSurfaceView: GLSurfaceView
     private var arSession: Session? = null
     private lateinit var renderer: StereoARRenderer
-    private lateinit var handCheck: HandCheck
     private val PICK_VIDEO_REQUEST = 1001
 
     private lateinit var eogManager: EOGManager
@@ -62,16 +31,6 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
 
     lateinit var sttMessage: STTMessage
     private var listening: Boolean = false
-    private lateinit var handLandmarker: HandLandmarker
-    private lateinit var cameraExecutor: ExecutorService
-    private lateinit var handLandmarkerHelper: HandLandmarkerHelper
-    private lateinit var cameraSelector: CameraSelector
-    //private lateinit var yuvConverter: YuvToRgbConverter
-    private lateinit var cameraProvider: ProcessCameraProvider
-
-    private var lastAnalyzedTimestamp = 0L
-    private val analysisIntervalMs = 5000L  // 100ms 간격 (약 10fps)
-    private var bitmapBuffer: Bitmap? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.d("Activity", "onCreate")
@@ -87,59 +46,10 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
             configure(config)
         }
 
-        /*
-        Log.d("handCheck", "1")
-        handCheck = HandCheck()
-
-        Log.d("handCheck", "1")
-        val baseOptions = BaseOptions.builder()
-            .setModelAssetPath("hand_landmarker.task") // 반드시 assets 폴더에 있어야 함
-            .build()
-        Log.d("handCheck", "1")
-        val optionsBuilder = HandLandmarker.HandLandmarkerOptions.builder()
-            .setBaseOptions(baseOptions)
-            .setRunningMode(RunningMode.LIVE_STREAM)
-            .setNumHands(1)
-            .setMinHandDetectionConfidence(0.5f)
-            .setMinHandPresenceConfidence(0.5f)
-            .setMinTrackingConfidence(0.5f)
-        optionsBuilder
-            .setResultListener { result, _ ->
-                if (result.landmarks().isNotEmpty()) {
-                    val landmarks = result.landmarks()[0]
-                    handCheck.onHandLandmarksReceived(landmarks)
-                }
-            }
-            .setErrorListener { error ->
-                Log.e("HandLandmarker", "MediaPipe Error: $error")
-            }
-        Log.d("handCheck", "1")
-        val handLandmarkerOptions = optionsBuilder.build()
-        Log.d("handCheck", "1")
-        //handLandmarker = HandLandmarker.createFromOptions(this@StereoARActivity, handLandmarkerOptions)
-        Log.d("handCheck", "1")
-        Log.d("handCheck", "1")
-        */
-        handCheck = HandCheck()
-
-        handLandmarkerHelper = HandLandmarkerHelper(
-            context = this@StereoARActivity,
-            runningMode = RunningMode.IMAGE,
-            currentDelegate = HandLandmarkerHelper.DELEGATE_GPU,
-            handLandmarkerHelperListener = this
-        )
-
-        //yuvConverter = YuvToRgbConverter(this)
-
-        //cameraExecutor = Executors.newSingleThreadExecutor()
-        //startCamera()
-
         glSurfaceView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             renderer = StereoARRenderer(arSession!!, this@StereoARActivity, this@StereoARActivity, this@StereoARActivity)
             renderer.loadVideoUri(this@StereoARActivity, 10)
-            renderer.setHandCheck(handCheck)
-            renderer.setHandLandmarkerHelper(handLandmarkerHelper)
             setRenderer(renderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
@@ -161,6 +71,7 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
 
             }
         })
+
 
         sttMessage = STTMessage(this)
         setSTT()
@@ -231,8 +142,6 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
         val layout = FrameLayout(this)
         layout.addView(glSurfaceView)
 
-
-        /*
         var layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
@@ -278,9 +187,10 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
             topMargin = 100
         }
         layout.addView(rightUpButton, layoutParams)
-*/
+
         setContentView(layout)
     }
+
 
     override fun onResume() {
         super.onResume()
@@ -298,7 +208,6 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
         arSession?.close()
         eogManager.disconnect()
         sttMessage.destroy()
-        cameraExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -328,26 +237,6 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
         }
     }
 
-    override fun onResults(resultBundle: HandLandmarkerHelper.ResultBundle) {
-        // 손 랜드마크 결과가 여기로 들어옵니다.
-        // ARCore Anchor 위치 업데이트 등에 활용 가능
-        Log.d("landmarks", "we got results")
-        val landmarks = resultBundle.results[0].landmarks()
-        Log.d("landmarks", "landmarks: $landmarks")
-        runOnUiThread {
-            // UI 업데이트가 필요하면 여기서 처리
-            updateAnchorWithLandmarks(landmarks[0])
-        }
-    }
-
-    override fun onError(error: String, errorCode: Int) {
-        Log.e("StereoARActivity", "HandLandmarker error: $error")
-    }
-
-    private fun updateAnchorWithLandmarks(landmarks: List<NormalizedLandmark>) {
-        // 여기서 landmarks를 기반으로 ARCore Anchor 위치 변경 로직 구현
-    }
-
     override fun setSTT() {
         sttMessage.onResult = { result ->
             runOnUiThread {
@@ -375,6 +264,8 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.READ_MEDIA_IMAGES,
             Manifest.permission.READ_MEDIA_VIDEO,
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
         )
 
         permissions.forEach { permission ->
@@ -384,54 +275,5 @@ class StereoARActivity : ComponentActivity(), SpeechController, HandLandmarkerHe
             }
             Log.d("권한요청: ", "$permission: ${if (granted) "GRANTED" else "DENIED"}")
         }
-    }
-
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-            this.cameraProvider = cameraProvider // 필드로 저장해두는 것이 좋음
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetResolution(Size(640, 480)) // 원하는 해상도
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .build()
-
-            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                val currentTimestamp = SystemClock.uptimeMillis()
-                if (currentTimestamp - lastAnalyzedTimestamp >= analysisIntervalMs) {
-                    lastAnalyzedTimestamp = currentTimestamp
-                    detectLiveStream(imageProxy, isFrontCamera = false)
-                } else {
-                    imageProxy.close()
-                }
-            }
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this as LifecycleOwner, // Activity가 LifecycleOwner여야 함
-                    cameraSelector,
-                    imageAnalysis
-                )
-            } catch (exc: Exception) {
-                Log.e("StereoARActivity", "Use case binding failed", exc)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-
-    private fun detectLiveStream(imageProxy: ImageProxy, isFrontCamera: Boolean) {
-        val startTime = SystemClock.uptimeMillis()
-        handLandmarkerHelper.detectLiveStream(
-            imageProxy = imageProxy,
-            isFrontCamera = isFrontCamera
-        )
-        val duration = SystemClock.uptimeMillis() - startTime
-        Log.d("Perf", "Detection took $duration ms")
     }
 }
